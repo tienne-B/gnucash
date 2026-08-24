@@ -302,24 +302,22 @@ lookup_price(PriceReq *pr, PriceDate pd)
     return TRUE;
 }
 
-/* (maybe) update the price from the pricedb. */
-static void
-gnc_xfer_dialog_update_price (XferDialog *xferData)
+static gboolean
+gnc_xfer_dialog_set_price_from_db (XferDialog *xferData, PriceDate price_date)
 {
     PriceReq pr;
     gnc_numeric price_value;
 
-    if (!xferData) return;
+    if (!xferData) return FALSE;
     if (!GNC_IS_COMMODITY (xferData->from_commodity) ||
-        !GNC_IS_COMMODITY (xferData->to_commodity)) return;
+        !GNC_IS_COMMODITY (xferData->to_commodity)) return FALSE;
     if (gnc_commodity_equal (xferData->from_commodity, xferData->to_commodity))
-        return;
-    if (!xferData->pricedb) return;
+        return FALSE;
+    if (!xferData->pricedb) return FALSE;
 
     price_request_from_xferData(&pr, xferData);
-    if (!lookup_price(&pr, SAME_DAY))
-        if (!lookup_price(&pr, NEAREST))
-        return;
+    if (!lookup_price(&pr, price_date))
+        return FALSE;
 
     /* grab the price from the pricedb */
     price_value = gnc_price_get_value (pr.price);
@@ -332,6 +330,16 @@ gnc_xfer_dialog_update_price (XferDialog *xferData)
 
     /* And then update the to_amount */
     gnc_xfer_update_to_amount (xferData);
+
+    return TRUE;
+}
+
+/* (maybe) update the price from the pricedb. */
+static void
+gnc_xfer_dialog_update_price (XferDialog *xferData)
+{
+    if (!gnc_xfer_dialog_set_price_from_db (xferData, SAME_DAY))
+        gnc_xfer_dialog_set_price_from_db (xferData, NEAREST);
 }
 
 static void
@@ -1556,7 +1564,9 @@ update_price(XferDialog *xferData, PriceReq *pr)
     gnc_numeric rounded_pr_value = round_price(pr->from, pr->to, price_value);
     gnc_numeric rounded_value;
 
-    if (gnc_price_get_source(pr->price) < xferData->price_source)
+    auto old_source = gnc_price_get_source (pr->price);
+
+    if (old_source < xferData->price_source)
     {
         PINFO("Existing price is preferred, so won't supersede.");
         gnc_price_unref (pr->price);
@@ -1567,7 +1577,8 @@ update_price(XferDialog *xferData, PriceReq *pr)
         value = swap_commodities(&from, &to, value);
     /* Test the rounded values for equality to minimize price-dithering. */
     rounded_value = round_price(from, to, value);
-    if (gnc_numeric_equal(rounded_value, rounded_pr_value))
+    if (old_source == xferData->price_source &&
+        gnc_numeric_equal(rounded_value, rounded_pr_value))
     {
         PINFO("Same price for %s in %s",
               gnc_commodity_get_mnemonic(pr->from),
@@ -1577,6 +1588,7 @@ update_price(XferDialog *xferData, PriceReq *pr)
     }
     gnc_price_begin_edit (pr->price);
     gnc_price_set_time64 (pr->price, pr->time);
+    gnc_price_set_source (pr->price, xferData->price_source);
     gnc_price_set_typestr(pr->price, xferData->price_type);
     gnc_price_set_value (pr->price, value);
     gnc_price_commit_edit (pr->price);
@@ -2471,8 +2483,11 @@ gboolean gnc_xfer_dialog_run_exchange_dialog(
      * pricedb properly.
      */
 
-    /* Set the exchange rate */
-    gnc_xfer_dialog_set_price_edit(xfer, *exch_rate);
+    /* Prefer a price previously saved for this date. The transaction rate is
+     * reconstructed from its rounded amount and value, so it may differ from
+     * the rate the user originally provided. */
+    if (!gnc_xfer_dialog_set_price_from_db (xfer, SAME_DAY))
+        gnc_xfer_dialog_set_price_edit(xfer, *exch_rate);
 
     /* and run it... */
     if (gnc_xfer_dialog_run_until_done(xfer) == FALSE)
