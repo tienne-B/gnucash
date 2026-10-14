@@ -3310,12 +3310,43 @@ pay_invoice_direct (GtkWindow *dialog, gpointer inv, gpointer user_data)
 }
 
 static void
-pay_invoice_cb (GtkWindow *dialog, gpointer *invoice_p, gpointer user_data)
+multi_pay_invoice_cb (GtkWindow *dialog, GList *invoice_list, gpointer user_data)
 {
-    g_return_if_fail (invoice_p && user_data);
-    if (! *invoice_p)
+    GncInvoice *first;
+    const GncOwner *owner;
+
+    if (!invoice_list)
         return;
-    pay_invoice_direct (dialog, *invoice_p, user_data);
+
+    first = invoice_list->data;
+    if (!invoice_list->next)
+    {
+        pay_invoice_direct (dialog, first, user_data);
+        return;
+    }
+
+    owner = gncOwnerGetEndOwner (gncInvoiceGetOwner (first));
+    for (GList *node = invoice_list; node; node = node->next)
+    {
+        GncInvoice *invoice = node->data;
+
+        if (!gncInvoiceIsPosted (invoice) || gncInvoiceIsPaid (invoice))
+        {
+            gnc_error_dialog (dialog, "%s",
+                              _("All selected documents must be posted and unpaid.\nRe-check your selection."));
+            return;
+        }
+        if (!gncOwnerEqual (owner, gncOwnerGetEndOwner (gncInvoiceGetOwner (invoice))) ||
+            gncInvoiceGetPostedAcc (invoice) != gncInvoiceGetPostedAcc (first))
+        {
+            gnc_error_dialog (dialog, "%s",
+                              _("All selected documents must have the same owner and posting account.\nRe-check your selection."));
+            return;
+        }
+    }
+
+    gnc_ui_payment_new_with_invoices (dialog, owner, gncInvoiceGetBook (first),
+                                      invoice_list);
 }
 
 struct multi_duplicate_invoice_data
@@ -3516,7 +3547,7 @@ gnc_invoice_search (GtkWindow *parent, GncInvoice *start, GncOwner *owner, QofBo
     static GNCSearchCallbackButton inv_buttons[] =
     {
         { N_("View/Edit Invoice"), NULL, multi_edit_invoice_cb, TRUE},
-        { N_("Process Payment"), pay_invoice_cb, NULL, FALSE},
+        { N_("Process Payment"), NULL, multi_pay_invoice_cb, FALSE},
         { N_("Duplicate"), NULL, multi_duplicate_invoice_cb, FALSE},
         { N_("Post"), NULL, multi_post_invoice_cb, FALSE},
         { N_("Printable Report"), NULL, multi_print_invoice_cb, TRUE},
@@ -3525,7 +3556,7 @@ gnc_invoice_search (GtkWindow *parent, GncInvoice *start, GncOwner *owner, QofBo
     static GNCSearchCallbackButton bill_buttons[] =
     {
         { N_("View/Edit Bill"), NULL, multi_edit_invoice_cb, TRUE},
-        { N_("Process Payment"), pay_invoice_cb, NULL, FALSE},
+        { N_("Process Payment"), NULL, multi_pay_invoice_cb, FALSE},
         { N_("Duplicate"), NULL, multi_duplicate_invoice_cb, FALSE},
         { N_("Post"), NULL, multi_post_invoice_cb, FALSE},
         { N_("Printable Report"), NULL, multi_print_invoice_cb, TRUE},
@@ -3536,7 +3567,7 @@ gnc_invoice_search (GtkWindow *parent, GncInvoice *start, GncOwner *owner, QofBo
         /* Translators: The terms 'Voucher' and 'Expense Voucher' are used
            interchangeably in gnucash and mean the same thing. */
         { N_("View/Edit Voucher"), NULL, multi_edit_invoice_cb, TRUE},
-        { N_("Process Payment"), pay_invoice_cb, NULL, FALSE},
+        { N_("Process Payment"), NULL, multi_pay_invoice_cb, FALSE},
         { N_("Duplicate"), NULL, multi_duplicate_invoice_cb, FALSE},
         { N_("Post"), NULL, multi_post_invoice_cb, FALSE},
         { N_("Printable Report"), NULL, multi_print_invoice_cb, TRUE},

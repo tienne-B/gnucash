@@ -39,6 +39,12 @@ PaymentWindow * gnc_ui_payment_new_with_invoice (GtkWindow *parent,
                                                  const GncOwner *owner,
                                                  QofBook *book,
                                                  GncInvoice *invoice);
+/* Preset documents must share an end owner and posting account.
+ * The caller retains ownership of the list and invoices. */
+PaymentWindow * gnc_ui_payment_new_with_invoices (GtkWindow *parent,
+                                                  const GncOwner *owner,
+                                                  QofBook *book,
+                                                  GList *invoices);
 PaymentWindow * gnc_ui_payment_new_with_txn (GtkWindow *parent, GncOwner *owner, Transaction *txn);
 
 /** Returns TRUE if the given transaction (to be used with gnc_ui_payment_new_with_txn() )

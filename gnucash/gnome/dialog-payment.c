@@ -598,7 +598,7 @@ gnc_payment_window_fill_docs_list (PaymentWindow *pw)
 
     g_list_free (list);
 
-    /* Highlight the preset invoice if it's in the new list */
+    /* Highlight the preset documents that are in the new list */
     gnc_payment_dialog_highlight_documents (pw);
 }
 
@@ -1490,7 +1490,16 @@ PaymentWindow *
 gnc_ui_payment_new_with_invoice (GtkWindow *parent, const GncOwner *owner,
                                  QofBook *book, GncInvoice *invoice)
 {
-    GNCLot *postlot;
+    GList *invoices = invoice ? g_list_prepend (NULL, invoice) : NULL;
+    PaymentWindow *pw = gnc_ui_payment_new_with_invoices (parent, owner, book, invoices);
+    g_list_free (invoices);
+    return pw;
+}
+
+PaymentWindow *
+gnc_ui_payment_new_with_invoices (GtkWindow *parent, const GncOwner *owner,
+                                 QofBook *book, GList *invoices)
+{
     InitialPaymentInfo *tx_info;
 
     if (!book) return NULL;
@@ -1508,11 +1517,13 @@ gnc_ui_payment_new_with_invoice (GtkWindow *parent, const GncOwner *owner,
         gncOwnerInitCustomer (&tx_info->owner, NULL);
     }
 
-    tx_info->post_acct = gncInvoiceGetPostedAcc (invoice);
+    tx_info->post_acct = invoices ? gncInvoiceGetPostedAcc (invoices->data) : NULL;
 
-    postlot = gncInvoiceGetPostedLot (invoice);
-    if (postlot)
+    for (GList *node = invoices; node; node = node->next)
     {
+        GNCLot *postlot = gncInvoiceGetPostedLot (node->data);
+        if (!postlot)
+            continue;
         PreExistLotInfo *lot_info = g_new0 (PreExistLotInfo, 1);
         lot_info->lot = postlot;
         lot_info->amount = gnc_numeric_zero ();
